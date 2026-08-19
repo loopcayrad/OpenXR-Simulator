@@ -540,6 +540,8 @@ struct Session {
     std::atomic<UINT> clientHeight{0};
     // SRWLOCK instead of std::mutex for robustness across DLL reload cycles.
     SRWLOCK previewLock{SRWLOCK_INIT};
+    // Mutex guarding preview state during quad-layer submission (upstream).
+    std::mutex previewMutex;
 };
 
 struct Swapchain {

@@ -148,3 +148,7 @@ openxr_simulator.log
 .tmp.driveupload/14163
 .tmp.driveupload/14217
 .tmp.driveupload/14169
+
+# Local Vulkan headers used only for building (not part of source)
+third_party/
+
