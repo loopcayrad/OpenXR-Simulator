@@ -21,12 +21,42 @@ endforeach()
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
+# Vulkan headers only -- the runtime resolves every entry point through the
+# app-supplied vkGetInstanceProcAddr (or a lazily loaded vulkan-1.dll), so it must
+# keep loading on machines with no Vulkan at all.
+find_path(SIMXR_VULKAN_INCLUDE_DIR vulkan/vulkan.h
+    HINTS $ENV{VULKAN_SDK}/Include $ENV{VULKAN_SDK}/include
+    PATHS ${CMAKE_SOURCE_DIR}/../BotW-BetterVR/cmake-build-Release/vcpkg_installed/x64-windows-static/include
+          ${CMAKE_SOURCE_DIR}/../BotW-BetterVR/build/vcpkg_installed/x64-windows-static/include)
+if(NOT SIMXR_VULKAN_INCLUDE_DIR)
+    message(FATAL_ERROR "vulkan/vulkan.h not found. Install the Vulkan SDK or set VULKAN_SDK.")
+endif()
+include_directories(${SIMXR_VULKAN_INCLUDE_DIR})
+
 # OpenXR Simulator Runtime DLL
 add_library(openxr_simulator SHARED
     src/runtime.cpp
+    src/flicker_detector.cpp
+    src/flicker_detector.h
+    src/json.h
     src/mcp_integration.h
+    src/projection_timing.h
     src/ui_enhancements.h
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(projection_timing_tests tests/projection_timing_tests.cpp)
+    target_include_directories(projection_timing_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME projection_timing COMMAND projection_timing_tests)
+
+    add_executable(ui_resolution_tests tests/ui_resolution_tests.cpp)
+    target_include_directories(ui_resolution_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(ui_resolution_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME ui_resolution COMMAND ui_resolution_tests)
+endif()
 
 # Link libraries
 target_link_libraries(openxr_simulator
@@ -35,6 +65,7 @@ target_link_libraries(openxr_simulator
     dxgi
     d3dcompiler
     dwmapi
+    msimg32
     uxtheme
 )
 
@@ -44,7 +75,13 @@ if(WIN32)
         WIN32_LEAN_AND_MEAN
         NOMINMAX
         _CRT_SECURE_NO_WARNINGS
+        UNICODE
+        _UNICODE
     )
+    if(MSVC)
+        # Without this MSVC decodes the UTF-8 sources as the system ANSI codepage.
+        target_compile_options(openxr_simulator PRIVATE /utf-8)
+    endif()
 endif()
 
 # Generate OpenXR runtime manifest
