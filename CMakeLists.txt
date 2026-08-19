@@ -23,13 +23,16 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 
 # Vulkan headers only -- the runtime resolves every entry point through the
 # app-supplied vkGetInstanceProcAddr (or a lazily loaded vulkan-1.dll), so it must
-# keep loading on machines with no Vulkan at all.
+# keep loading on machines with no Vulkan at all. We therefore only need the
+# headers at build time; the shipped runtime carries no Vulkan binaries.
+# Provide them via the official Vulkan SDK (sets VULKAN_SDK) or a local
+# `vcpkg install vulkan-headers`. No third-party project paths are relied on.
 find_path(SIMXR_VULKAN_INCLUDE_DIR vulkan/vulkan.h
-    HINTS $ENV{VULKAN_SDK}/Include $ENV{VULKAN_SDK}/include
-    PATHS ${CMAKE_SOURCE_DIR}/../BotW-BetterVR/cmake-build-Release/vcpkg_installed/x64-windows-static/include
-          ${CMAKE_SOURCE_DIR}/../BotW-BetterVR/build/vcpkg_installed/x64-windows-static/include)
+    HINTS $ENV{VULKAN_SDK}/Include $ENV{VULKAN_SDK}/include)
 if(NOT SIMXR_VULKAN_INCLUDE_DIR)
-    message(FATAL_ERROR "vulkan/vulkan.h not found. Install the Vulkan SDK or set VULKAN_SDK.")
+    message(FATAL_ERROR
+        "vulkan/vulkan.h not found. Install the Vulkan SDK (https://vulkan.lunarg.com/) "
+        "and ensure VULKAN_SDK is set, or run `vcpkg install vulkan-headers`.")
 endif()
 include_directories(${SIMXR_VULKAN_INCLUDE_DIR})
 
@@ -111,3 +114,42 @@ file(WRITE ${CMAKE_SOURCE_DIR}/bin/openxr_simulator.json ${RUNTIME_MANIFEST_CONT
 # Installation
 install(TARGETS openxr_simulator DESTINATION bin)
 install(FILES ${CMAKE_SOURCE_DIR}/bin/openxr_simulator.json DESTINATION bin)
+
+# ---------------------------------------------------------------------------
+# OpenXR Simulator Manager - system-tray desktop app (pure Win32, no framework)
+# Gives ordinary users a one-click way to activate the simulator as the active
+# OpenXR runtime (HKLM, self-elevates via UAC) and deactivate on quit.
+# ---------------------------------------------------------------------------
+add_executable(openxr_simulator_manager
+    app/tray_app.cpp
+)
+
+target_link_libraries(openxr_simulator_manager
+    shell32
+    shlwapi
+)
+
+if(WIN32)
+    target_compile_definitions(openxr_simulator_manager PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
+        UNICODE
+        _UNICODE
+    )
+    if(MSVC)
+        target_compile_options(openxr_simulator_manager PRIVATE /utf-8)
+        # Same static-CRT reasoning as the runtime DLL: the manager is a
+        # self-contained .exe meant for ordinary users, so it must not depend on
+        # a specific MSVCP140 version being present on their machine.
+        set_property(TARGET openxr_simulator_manager PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        target_compile_options(openxr_simulator_manager PRIVATE
+            $<$<CONFIG:Debug>:/MTd>
+            $<$<CONFIG:Release>:/MT>
+            $<$<CONFIG:RelWithDebInfo>:/MT>)
+        target_link_options(openxr_simulator_manager PRIVATE
+            $<$<CONFIG:Debug>:/NODEFAULTLIB:MSVCRTD.lib /SUBSYSTEM:WINDOWS>
+            $<$<CONFIG:Release>:/NODEFAULTLIB:MSVCRT.lib /SUBSYSTEM:WINDOWS>
+            $<$<CONFIG:RelWithDebInfo>:/NODEFAULTLIB:MSVCRT.lib /SUBSYSTEM:WINDOWS>)
+    endif()
+endif()
